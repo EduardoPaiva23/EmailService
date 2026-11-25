@@ -1007,6 +1007,47 @@ Testes:
 Entrega: registrar um e-mail e seu evento Outbox na mesma transação,
 ainda sem API, sem RabbitMQ e sem envio.
 
+Decisões tomadas na implementação:
+
+-   As transições de `Email` recebem o horário (`now`) como parâmetro,
+    e o Domain não depende de relógio. Na Application, o relógio é um
+    `TimeProvider` injetado.
+-   `Attempts` conta tentativas **concluídas**: é incrementado por
+    `MarkSent`, `ScheduleRetry` e `MarkFailed`. `ScheduleRetry` recusa a
+    transição quando não restam tentativas (`HasAttemptsRemaining`), e
+    quem chama deve usar `MarkFailed`.
+-   O retry manual (`RetryManually`, `Failed -> Pending`) zera
+    `Attempts`; sem isso, o e-mail falharia de novo na primeira
+    tentativa.
+-   A unidade de trabalho é o `SaveChanges` do EF Core, que grava tudo
+    em uma única transação. Conflitos de `RowVersion` viram
+    `ConcurrencyConflictException` (camada Application).
+-   Todas as datas são UTC. O `AppDbContext` restaura o `DateTimeKind`
+    na leitura.
+-   O seed do `ApiClient` de desenvolvimento roda na inicialização da
+    API, apenas em Development, com a chave lida de
+    `DevelopmentSeed:ApiKey`. Não é feito por migration: o repositório
+    é público, e uma chave conhecida acabaria em qualquer banco migrado.
+-   As PKs são `Guid` aleatórios (`Guid.NewGuid`). Revisar na Etapa 10:
+    índices clusterizados em GUID aleatório fragmentam com alto volume.
+
+Como rodar localmente (uma vez por máquina):
+
+``` powershell
+# Connection string e chave de dev ficam em User Secrets, fora do repositório
+dotnet user-secrets set "ConnectionStrings:EmailServiceDb" "Server=localhost,1433;Database=EmailService;User Id=sa;Password=<senha do .env>;TrustServerCertificate=True" --project src/EmailService.API
+dotnet user-secrets set "ConnectionStrings:EmailServiceDb" "<mesma connection string>" --project src/EmailService.Worker
+dotnet user-secrets set "DevelopmentSeed:ApiKey" "es_dev_<pelo menos 32 caracteres aleatórios>" --project src/EmailService.API
+
+# Aplicar as migrations
+$env:ConnectionStrings__EmailServiceDb = "<mesma connection string>"
+dotnet ef database update --project src/EmailService.Infrastructure
+```
+
+Os testes de integração sobem um SQL Server próprio via Testcontainers,
+com o mesmo limite de 2 GB do compose. Em máquinas com pouca memória,
+pare o SQL Server do compose antes (`docker compose stop sqlserver`).
+
 ### Etapa 3 --- API de entrada
 
 Itens:
@@ -1198,13 +1239,11 @@ picos estimados, e os parâmetros calibrados documentados.
 
 ## 12. Próxima atividade
 
-Executar a Etapa 1 (seção 10) e, em seguida, a Etapa 2: Domain e
-persistência.
+Etapas 1 e 2 concluídas. Próxima: Etapa 3, API de entrada.
 
-A primeira entrega funcional será conseguir registrar um e-mail e seu
-evento Outbox na mesma transação do SQL Server, ainda sem enviar e-mail
-e sem publicar no RabbitMQ. Depois vêm a API (Etapa 3), o Dispatcher
-(Etapa 4) e o Worker (Etapa 5).
+A próxima entrega funcional será um `POST` autenticado e idempotente que
+cria um e-mail `Pending` com seu evento na Outbox. Depois vêm o
+Dispatcher (Etapa 4) e o Worker (Etapa 5).
 
 ------------------------------------------------------------------------
 
