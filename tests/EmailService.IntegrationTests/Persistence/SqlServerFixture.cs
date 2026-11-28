@@ -1,4 +1,5 @@
 using EmailService.Application;
+using EmailService.Application.Security;
 using EmailService.Domain.Entities;
 using EmailService.Infrastructure;
 using EmailService.Infrastructure.Persistence;
@@ -64,6 +65,23 @@ public sealed class SqlServerFixture : IAsyncLifetime
             .AddApplication()
             .AddInfrastructure(configuration)
             .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+    }
+
+    /// <summary>Cria um ApiClient com uma API key conhecida, para chamar a API.</summary>
+    public async Task<(ApiClient Client, string ApiKey)> CreateClientWithKeyAsync()
+    {
+        var apiKey = "es_test_" + Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+        var client = ApiClient.Create(
+            "Cliente " + apiKey[8..14],
+            ApiKeyHasher.GetPrefix(apiKey),
+            ApiKeyHasher.Hash(apiKey),
+            DateTime.UtcNow);
+
+        await using var scope = CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.ApiClients.Add(client);
+        await db.SaveChangesAsync();
+        return (client, apiKey);
     }
 
     /// <summary>Cria e persiste um ApiClient novo, para isolar os dados de cada teste.</summary>

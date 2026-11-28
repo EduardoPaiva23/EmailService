@@ -20,6 +20,11 @@ public interface IOutboxRepository
 public interface IIdempotencyKeyRepository
 {
     void Add(IdempotencyKey key);
+
+    /// <summary>Marca uma chave lida por <see cref="GetAsync"/> como alterada.</summary>
+    void Update(IdempotencyKey key);
+
+    /// <summary>Lê a chave direto do banco, sem rastreamento.</summary>
     Task<IdempotencyKey?> GetAsync(Guid clientId, string key, CancellationToken cancellationToken = default);
 }
 

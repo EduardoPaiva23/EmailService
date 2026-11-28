@@ -37,4 +37,25 @@ public sealed class IdempotencyKey
 
     /// <summary>True se a solicitação repetida tem o mesmo payload da original.</summary>
     public bool Matches(string requestHash) => RequestHash == requestHash;
+
+    public bool IsExpired(DateTime now) => now >= ExpiresAt;
+
+    /// <summary>
+    /// Reaproveita uma chave expirada (ainda não removida pela limpeza) para
+    /// uma nova solicitação. A PK (ClientId, Key) é mantida.
+    /// </summary>
+    public void Renew(string requestHash, Guid emailId, DateTime now, TimeSpan ttl)
+    {
+        if (!IsExpired(now))
+            throw new DomainException("Só é possível renovar uma chave de idempotência expirada.");
+        if (string.IsNullOrWhiteSpace(requestHash))
+            throw new DomainException("'requestHash' é obrigatório.");
+        if (ttl <= TimeSpan.Zero)
+            throw new DomainException("O TTL deve ser positivo.");
+
+        RequestHash = requestHash;
+        EmailId = emailId;
+        CreatedAt = now;
+        ExpiresAt = now + ttl;
+    }
 }
