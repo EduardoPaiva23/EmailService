@@ -1077,6 +1077,37 @@ Testes:
 Entrega: via HTTP, um cliente autenticado cria um e-mail `Pending` com
 evento na Outbox; reenviar a mesma solicitação não cria duplicata.
 
+Decisões tomadas na implementação:
+
+-   **Hash da solicitação:** SHA-256 de `to`, `subject`, `body` e
+    `isHtml`. `CorrelationId` fica de fora: repetir a solicitação com
+    outro `X-Correlation-Id` ainda é a mesma solicitação.
+-   **Repetição idempotente:** devolve `202` com o corpo original e o
+    header `Idempotent-Replayed: true`.
+-   **Corrida de idempotência:** duas requisições simultâneas com a
+    mesma chave fazem a segunda violar a PK de `IdempotencyKeys`. A
+    Infrastructure converte os erros 2627/2601 do SQL Server em
+    `DuplicateKeyException`, e o caso de uso responde como repetição (ou
+    `422`, se o payload for diferente). A consulta da chave é sem
+    rastreamento, para não devolver a própria chave que falhou ao gravar.
+-   **Chave expirada ainda não removida pela limpeza:** é renovada
+    (`IdempotencyKey.Renew`) e aponta para a nova solicitação. Duas
+    requisições simultâneas com a mesma chave **expirada** podem criar
+    dois e-mails; a janela é pequena e fica para a Etapa 7.
+-   **`X-Correlation-Id`:** deve ser um GUID, porque é gravado em
+    `Emails.CorrelationId`. Um valor que não é GUID responde `400`.
+-   **Autenticação:** a busca é pelo prefixo da chave e a comparação do
+    hash é em tempo constante. Chave ausente, inválida ou de cliente
+    inativo respondem `401` em `ProblemDetails`.
+-   **Validação:** o assunto não pode conter quebras de linha, o que
+    impede injetar cabeçalhos SMTP (ex.: `Bcc`). O corpo é limitado a
+    1.000.000 de caracteres.
+-   **Configuração:** a seção `Email` define `MaxAttempts` e
+    `IdempotencyKeyTtl`.
+-   **Log de requisição do Serilog:** fica antes do `UseExceptionHandler`
+    no pipeline, para registrar o status final (`422`, `409`) e não a
+    exceção como `500`.
+
 ### Etapa 4 --- Mensageria
 
 Itens:
@@ -1239,11 +1270,12 @@ picos estimados, e os parâmetros calibrados documentados.
 
 ## 12. Próxima atividade
 
-Etapas 1 e 2 concluídas. Próxima: Etapa 3, API de entrada.
+Etapas 1 a 3 concluídas. Próxima: Etapa 4, Mensageria.
 
-A próxima entrega funcional será um `POST` autenticado e idempotente que
-cria um e-mail `Pending` com seu evento na Outbox. Depois vêm o
-Dispatcher (Etapa 4) e o Worker (Etapa 5).
+A próxima entrega funcional será um `POST` na API resultando em mensagem
+na fila `email.send`, publicada pelo Outbox Dispatcher sem perda mesmo
+com o broker indisponível. Depois vêm o Worker (Etapa 5) e o envio SMTP
+real (Etapa 6, MVP).
 
 ------------------------------------------------------------------------
 

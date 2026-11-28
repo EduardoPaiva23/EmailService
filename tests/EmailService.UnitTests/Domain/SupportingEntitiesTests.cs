@@ -130,6 +130,38 @@ public class SupportingEntitiesTests
         Assert.False(key.Matches("hash-b"));
     }
 
+    [Fact]
+    public void IdempotencyKey_IsExpired_FromExpiresAtOnwards()
+    {
+        var key = IdempotencyKey.Create(Guid.NewGuid(), "k", "h", Guid.NewGuid(), Now, TimeSpan.FromHours(1));
+
+        Assert.False(key.IsExpired(Now.AddMinutes(59)));
+        Assert.True(key.IsExpired(Now.AddHours(1)));
+    }
+
+    [Fact]
+    public void IdempotencyKey_Renew_PointsToNewRequest()
+    {
+        var key = IdempotencyKey.Create(Guid.NewGuid(), "k", "hash-antigo", Guid.NewGuid(), Now, TimeSpan.FromHours(1));
+        var newEmailId = Guid.NewGuid();
+        var later = Now.AddHours(2);
+
+        key.Renew("hash-novo", newEmailId, later, TimeSpan.FromHours(24));
+
+        Assert.Equal("hash-novo", key.RequestHash);
+        Assert.Equal(newEmailId, key.EmailId);
+        Assert.Equal(later, key.CreatedAt);
+        Assert.Equal(later.AddHours(24), key.ExpiresAt);
+    }
+
+    [Fact]
+    public void IdempotencyKey_RenewBeforeExpiry_Throws()
+    {
+        var key = IdempotencyKey.Create(Guid.NewGuid(), "k", "h", Guid.NewGuid(), Now, TimeSpan.FromHours(1));
+
+        Assert.Throws<DomainException>(() => key.Renew("h2", Guid.NewGuid(), Now.AddMinutes(30), TimeSpan.FromHours(1)));
+    }
+
     // ---------- ApiClient ----------
 
     [Fact]

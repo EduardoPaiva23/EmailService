@@ -1,6 +1,7 @@
 using EmailService.Application.Abstractions.Persistence;
 using EmailService.Application.Exceptions;
 using EmailService.Domain.Entities;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace EmailService.Infrastructure.Persistence;
@@ -24,8 +25,14 @@ internal sealed class IdempotencyKeyRepository(AppDbContext db) : IIdempotencyKe
 {
     public void Add(IdempotencyKey key) => db.IdempotencyKeys.Add(key);
 
+    public void Update(IdempotencyKey key) => db.IdempotencyKeys.Update(key);
+
+    // Sem rastreamento: depois de uma DuplicateKeyException, o contexto ainda
+    // rastreia a chave que falhou ao gravar, e uma consulta rastreada
+    // devolveria essa instância em vez da linha vencedora do banco.
     public Task<IdempotencyKey?> GetAsync(Guid clientId, string key, CancellationToken cancellationToken = default) =>
-        db.IdempotencyKeys.SingleOrDefaultAsync(k => k.ClientId == clientId && k.Key == key, cancellationToken);
+        db.IdempotencyKeys.AsNoTracking()
+            .SingleOrDefaultAsync(k => k.ClientId == clientId && k.Key == key, cancellationToken);
 }
 
 internal sealed class ApiClientRepository(AppDbContext db) : IApiClientRepository
@@ -52,6 +59,11 @@ internal sealed class UnitOfWork(AppDbContext db) : IUnitOfWork
         {
             throw new ConcurrencyConflictException(
                 "O registro foi alterado por outro processo depois de ser lido.", ex);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2627 or 2601 })
+        {
+            // 2627: violação de PK/UNIQUE constraint; 2601: violação de índice único.
+            throw new DuplicateKeyException("A gravação violou uma chave única.", ex);
         }
     }
 }

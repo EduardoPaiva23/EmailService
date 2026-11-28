@@ -1,3 +1,7 @@
+using EmailService.Application.Security;
+using EmailService.Application.UseCases.GetEmailStatus;
+using EmailService.Application.UseCases.SendEmail;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -10,7 +14,12 @@ public static class DependencyInjection
         // Relógio injetável: os testes podem substituí-lo por um FakeTimeProvider.
         services.TryAddSingleton(TimeProvider.System);
 
-        // Casos de uso e validadores serão registrados aqui (Etapa 3).
+        services.TryAddSingleton(new SendEmailOptions());
+        services.AddScoped<SendEmailHandler>();
+        services.AddScoped<GetEmailStatusHandler>();
+        services.AddScoped<ApiKeyAuthenticator>();
+        services.AddValidatorsFromAssemblyContaining<SendEmailCommandValidator>(ServiceLifetime.Singleton);
+
         return services;
     }
 }
